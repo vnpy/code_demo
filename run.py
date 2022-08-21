@@ -1,17 +1,18 @@
 from PySide6 import QtWidgets
 
+from vnpy.event import EventEngine, Event
 from vnpy_ctp.api import MdApi
 
 
 class SimpleWidget(QtWidgets.QWidget):
     """简单图形控件"""
 
-    def __init__(self):
+    def __init__(self, event_engine):
         """构造函数"""
         super().__init__()      # 这里要首先调用Qt对象C++中的构造函数
 
-        # 用来绑定api对象
-        self.api = None
+        self.event_engine = event_engine
+        self.event_engine.register("log", self.update_log)
 
         # 基础图形控件
         self.log_monitor = QtWidgets.QTextEdit()
@@ -34,15 +35,20 @@ class SimpleWidget(QtWidgets.QWidget):
         symbol = self.symbol_line.text()
         self.api.subscribeMarketData(symbol)
 
+    def update_log(self, event):
+        """更新日志"""
+        msg = event.data
+        self.log_monitor.append(msg)
+
 
 class CtpMdApi(MdApi):
     """实现行情API"""
 
-    def __init__(self, log_monitor):
+    def __init__(self, event_engine):
         """"""
         super().__init__()
 
-        self.log_monitor = log_monitor
+        self.event_engine = event_engine
 
     def onFrontConnected(self):
         """服务器连接成功回报"""
@@ -73,20 +79,25 @@ class CtpMdApi(MdApi):
 
     def write_log(self, msg):
         """"""
-        self.log_monitor.append(msg)
+        event = Event("log", msg)
+        self.event_engine.put(event)
 
 
 def main():
     """主函数"""
+    # 创建并启动事件引擎
+    event_engine = EventEngine()
+    event_engine.start()
+
     # 创建Qt应用
     app = QtWidgets.QApplication()
 
     # 创建图形控件
-    widget = SimpleWidget()
+    widget = SimpleWidget(event_engine)
     widget.show()
 
     # 创建API实例
-    api = CtpMdApi(widget.log_monitor)
+    api = CtpMdApi(event_engine)
 
     # 绑定到图形控件
     widget.api = api
@@ -102,6 +113,9 @@ def main():
 
     # 启动主线程UI循环
     app.exec()
+
+    # 关闭事件引擎
+    event_engine.stop()
 
 
 if __name__ == "__main__":
