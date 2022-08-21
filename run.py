@@ -1,4 +1,11 @@
+from threading import Thread
+
 from PySide6 import QtWidgets
+from ibapi.client import EClient
+from ibapi.wrapper import EWrapper
+from ibapi.common import TickAttrib, TickerId
+from ibapi.ticktype import TickType
+from ibapi.contract import Contract
 
 from vnpy.event import EventEngine, Event
 from vnpy_ctp.api import MdApi
@@ -13,6 +20,9 @@ class SimpleWidget(QtWidgets.QWidget):
 
         self.event_engine: EventEngine = event_engine
         self.event_engine.register("log", self.update_log)
+
+        # 用于绑定API对象
+        self.api = None
 
         # 基础图形控件
         self.log_monitor: QtWidgets.QTextEdit = QtWidgets.QTextEdit()
@@ -33,7 +43,10 @@ class SimpleWidget(QtWidgets.QWidget):
     def subscribe_symbol(self) -> None:
         """订阅行情"""
         symbol: str = self.symbol_line.text()
-        self.api.subscribeMarketData(symbol)
+
+        # self.api.subscribeMarketData(symbol)
+
+        self.api.subscribe(symbol)
 
     def update_log(self, event: Event) -> None:
         """更新日志"""
@@ -78,9 +91,88 @@ class CtpMdApi(MdApi):
         self.write_log(str(data))
 
     def write_log(self, msg: str) -> None:
-        """"""
+        """输出日志信息"""
         event: Event = Event("log", msg)
         self.event_engine.put(event)
+
+
+class IbApi(EWrapper):
+    """IB的API实现"""
+
+    def __init__(self, event_engine: EventEngine):
+        """"""
+        super().__init__()
+
+        self.event_engine: EventEngine = event_engine
+
+        self.client: EClient = EClient(self)
+        self.reqid: int = 0
+
+        self.close = self.client.disconnect
+
+    def connectAck(self) -> None:
+        """连接成功回报"""
+        self.write_log("IB TWS连接成功")
+
+    def connectionClosed(self) -> None:
+        """连接断开回报"""
+        self.write_log("IB TWS连接断开")
+
+    def tickPrice(
+        self,
+        reqId: TickerId,
+        tickType: TickType,
+        price: float,
+        attrib: TickAttrib
+    ) -> None:
+        """tick价格更新回报"""
+        super().tickPrice(reqId, tickType, price, attrib)
+
+        self.write_log(f"{reqId} {tickType}: {price}")
+
+    def tickSize(
+        self,
+        reqId: TickerId,
+        tickType: TickType,
+        size: int
+    ) -> None:
+        """tick数量更新回报"""
+        super().tickSize(reqId, tickType, size)
+
+        self.write_log(f"{reqId} {tickType}: {size}")
+
+    def tickString(
+        self,
+        reqId: TickerId,
+        tickType: TickType,
+        value: str
+    ) -> None:
+        """tick字符串更新回报"""
+        super().tickString(reqId, tickType, value)
+
+        self.write_log(f"{reqId} {tickType}: {value}")
+
+    def write_log(self, msg: str) -> None:
+        """输出日志信息"""
+        event: Event = Event("log", msg)
+        self.event_engine.put(event)
+
+    def connect(self, host: str, port: int, clientid: int) -> None:
+        """连接TWS"""
+        self.client.connect(host, port, clientid)
+        self.thread = Thread(target=self.client.run)
+        self.thread.start()
+
+    def subscribe(self, symbol: str) -> None:
+        """订阅美股聚合行情"""
+        ib_contract: Contract = Contract()
+        ib_contract.exchange = "SMART"
+        ib_contract.secType = "CMDTY"
+        ib_contract.currency = "USD"
+        ib_contract.symbol = symbol
+
+        self.reqid += 1
+        self.client.reqMktData(self.reqid, ib_contract, "", False, False, [])
 
 
 def main():
@@ -96,23 +188,25 @@ def main():
     widget: SimpleWidget = SimpleWidget(event_engine)
     widget.show()
 
-    # 创建API实例
-    api: CtpMdApi = CtpMdApi(event_engine)
+    # CTP API
+    # ctp_api: CtpMdApi = CtpMdApi(event_engine)
+    # ctp_api.createFtdcMdApi(".")
+    # ctp_api.registerFront("tcp://180.168.146.187:10131")
+    # ctp_api.init()
+    # widget.api = ctp_api
 
-    # 初始化底层
-    api.createFtdcMdApi(".")
-
-    # 注册服务器地址
-    api.registerFront("tcp://180.168.146.187:10131")
-
-    # 发起连接
-    api.init()
+    # IB API
+    ib_api: IbApi = IbApi(event_engine)
+    ib_api.connect("localhost", 7497, 1)
+    widget.api = ib_api
 
     # 启动主线程UI循环
     app.exec()
 
     # 关闭事件引擎
     event_engine.stop()
+
+    ib_api.close()
 
 
 if __name__ == "__main__":
