@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.common import TickAttrib, TickerId
-from ibapi.ticktype import TickType
+from ibapi.ticktype import TickType, TickTypeEnum
 from ibapi.contract import Contract
 
 from vnpy.event import EventEngine, Event
@@ -48,9 +48,9 @@ class SimpleWidget(QtWidgets.QWidget):
         """订阅行情"""
         symbol: str = self.symbol_line.text()
 
-        self.api.subscribeMarketData(symbol)
+        # self.api.subscribeMarketData(symbol)
 
-        # self.api.subscribe(symbol)
+        self.api.subscribe(symbol)
 
     def update_log(self, event: Event) -> None:
         """更新日志"""
@@ -129,6 +129,20 @@ class CtpMdApi(MdApi):
 class IbApi(EWrapper):
     """IB的API实现"""
 
+    TICKFIELD_IB2VT: dict[int, str] = {
+        0: "bid_volume_1",
+        1: "bid_price_1",
+        2: "ask_price_1",
+        3: "ask_volume_1",
+        4: "last_price",
+        5: "last_volume",
+        6: "high_price",
+        7: "low_price",
+        8: "volume",
+        9: "pre_close",
+        14: "open_price",
+    }
+
     def __init__(self, event_engine: EventEngine):
         """"""
         super().__init__()
@@ -139,6 +153,8 @@ class IbApi(EWrapper):
         self.reqid: int = 0
 
         self.close = self.client.disconnect
+
+        self.ticks: dict[int, TickData] = {}
 
     def connectAck(self) -> None:
         """连接成功回报"""
@@ -158,7 +174,12 @@ class IbApi(EWrapper):
         """tick价格更新回报"""
         super().tickPrice(reqId, tickType, price, attrib)
 
-        self.write_log(f"{reqId} {tickType}: {price}")
+        tick: TickData = self.ticks[reqId]
+        name: str = self.TICKFIELD_IB2VT.get(tickType, "")
+        if name:
+            setattr(tick, name, price)
+
+        self.write_log(str(tick))
 
     def tickSize(
         self,
@@ -169,7 +190,12 @@ class IbApi(EWrapper):
         """tick数量更新回报"""
         super().tickSize(reqId, tickType, size)
 
-        self.write_log(f"{reqId} {tickType}: {size}")
+        tick: TickData = self.ticks[reqId]
+        name: str = self.TICKFIELD_IB2VT.get(tickType, "")
+        if name:
+            setattr(tick, name, size)
+
+        self.write_log(str(tick))
 
     def tickString(
         self,
@@ -180,7 +206,11 @@ class IbApi(EWrapper):
         """tick字符串更新回报"""
         super().tickString(reqId, tickType, value)
 
-        self.write_log(f"{reqId} {tickType}: {value}")
+        if tickType == TickTypeEnum.LAST_TIMESTAMP:
+            tick: TickData = self.ticks[reqId]
+            tick.datetime = datetime.fromtimestamp(int(value))
+
+            self.write_log(str(tick))
 
     def write_log(self, msg: str) -> None:
         """输出日志信息"""
@@ -204,6 +234,14 @@ class IbApi(EWrapper):
         self.reqid += 1
         self.client.reqMktData(self.reqid, ib_contract, "", False, False, [])
 
+        tick: TickData = TickData(
+            symbol=ib_contract.symbol,
+            exchange=Exchange.SMART,
+            datetime=datetime.now(),
+            gateway_name="ib",
+        )
+        self.ticks[self.reqid] = tick
+
 
 def main():
     """主函数"""
@@ -219,16 +257,16 @@ def main():
     widget.show()
 
     # CTP API
-    ctp_api: CtpMdApi = CtpMdApi(event_engine)
-    ctp_api.createFtdcMdApi(".")
-    ctp_api.registerFront("tcp://180.168.146.187:10131")
-    ctp_api.init()
-    widget.api = ctp_api
+    # ctp_api: CtpMdApi = CtpMdApi(event_engine)
+    # ctp_api.createFtdcMdApi(".")
+    # ctp_api.registerFront("tcp://180.168.146.187:10131")
+    # ctp_api.init()
+    # widget.api = ctp_api
 
     # IB API
-    # ib_api: IbApi = IbApi(event_engine)
-    # ib_api.connect("localhost", 7497, 1)
-    # widget.api = ib_api
+    ib_api: IbApi = IbApi(event_engine)
+    ib_api.connect("localhost", 7497, 1)
+    widget.api = ib_api
 
     # 启动主线程UI循环
     app.exec()
@@ -236,7 +274,7 @@ def main():
     # 关闭事件引擎
     event_engine.stop()
 
-#    ib_api.close()
+    ib_api.close()
 
 
 if __name__ == "__main__":
