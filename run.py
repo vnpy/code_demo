@@ -1,4 +1,5 @@
 from threading import Thread
+from datetime import datetime
 
 from PySide6 import QtWidgets
 from ibapi.client import EClient
@@ -8,6 +9,9 @@ from ibapi.ticktype import TickType
 from ibapi.contract import Contract
 
 from vnpy.event import EventEngine, Event
+from vnpy.trader.constant import Exchange
+from vnpy.trader.object import TickData
+from vnpy.trader.event import EVENT_LOG
 from vnpy_ctp.api import MdApi
 
 
@@ -19,7 +23,7 @@ class SimpleWidget(QtWidgets.QWidget):
         super().__init__()      # 这里要首先调用Qt对象C++中的构造函数
 
         self.event_engine: EventEngine = event_engine
-        self.event_engine.register("log", self.update_log)
+        self.event_engine.register(EVENT_LOG, self.update_log)
 
         # 用于绑定API对象
         self.api = None
@@ -44,9 +48,9 @@ class SimpleWidget(QtWidgets.QWidget):
         """订阅行情"""
         symbol: str = self.symbol_line.text()
 
-        # self.api.subscribeMarketData(symbol)
+        self.api.subscribeMarketData(symbol)
 
-        self.api.subscribe(symbol)
+        # self.api.subscribe(symbol)
 
     def update_log(self, event: Event) -> None:
         """更新日志"""
@@ -90,9 +94,35 @@ class CtpMdApi(MdApi):
         """行情数据推送回调"""
         self.write_log(str(data))
 
+        timestamp: str = f"{data['ActionDay']} {data['UpdateTime']}.{int(data['UpdateMillisec']/100)}"
+        dt: datetime = datetime.strptime(timestamp, "%Y%m%d %H:%M:%S.%f")
+
+        tick: TickData = TickData(
+            symbol=data["InstrumentID"],
+            exchange=Exchange.SHFE,
+            datetime=dt,
+            volume=data["Volume"],
+            turnover=data["Turnover"],
+            open_interest=data["OpenInterest"],
+            last_price=data["LastPrice"],
+            limit_up=data["UpperLimitPrice"],
+            limit_down=data["LowerLimitPrice"],
+            open_price=data["OpenPrice"],
+            high_price=data["HighestPrice"],
+            low_price=data["LowestPrice"],
+            pre_close=data["PreClosePrice"],
+            bid_price_1=data["BidPrice1"],
+            ask_price_1=data["AskPrice1"],
+            bid_volume_1=data["BidVolume1"],
+            ask_volume_1=data["AskVolume1"],
+            gateway_name="CTP"
+        )
+
+        self.write_log(str(tick))
+
     def write_log(self, msg: str) -> None:
         """输出日志信息"""
-        event: Event = Event("log", msg)
+        event: Event = Event(EVENT_LOG, msg)
         self.event_engine.put(event)
 
 
@@ -154,7 +184,7 @@ class IbApi(EWrapper):
 
     def write_log(self, msg: str) -> None:
         """输出日志信息"""
-        event: Event = Event("log", msg)
+        event: Event = Event(EVENT_LOG, msg)
         self.event_engine.put(event)
 
     def connect(self, host: str, port: int, clientid: int) -> None:
@@ -189,16 +219,16 @@ def main():
     widget.show()
 
     # CTP API
-    # ctp_api: CtpMdApi = CtpMdApi(event_engine)
-    # ctp_api.createFtdcMdApi(".")
-    # ctp_api.registerFront("tcp://180.168.146.187:10131")
-    # ctp_api.init()
-    # widget.api = ctp_api
+    ctp_api: CtpMdApi = CtpMdApi(event_engine)
+    ctp_api.createFtdcMdApi(".")
+    ctp_api.registerFront("tcp://180.168.146.187:10131")
+    ctp_api.init()
+    widget.api = ctp_api
 
     # IB API
-    ib_api: IbApi = IbApi(event_engine)
-    ib_api.connect("localhost", 7497, 1)
-    widget.api = ib_api
+    # ib_api: IbApi = IbApi(event_engine)
+    # ib_api.connect("localhost", 7497, 1)
+    # widget.api = ib_api
 
     # 启动主线程UI循环
     app.exec()
@@ -206,7 +236,7 @@ def main():
     # 关闭事件引擎
     event_engine.stop()
 
-    ib_api.close()
+#    ib_api.close()
 
 
 if __name__ == "__main__":
