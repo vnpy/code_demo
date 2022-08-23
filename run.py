@@ -90,7 +90,7 @@ class MonitorEngine:
         self.event_engine.register(EVENT_LOG, self.process_log_event)
 
         self.tick_history: list[TickData] = []
-        self.trading_symbol: str = "m2301.DCE"
+        self.trading_symbol: str = "IF2209.CFFEX"
         self.trading_target: int = 0
 
     def process_tick_event(self, event: Event) -> None:
@@ -171,7 +171,7 @@ class MonitorEngine:
 
         contract = self.contracts[self.trading_symbol]
 
-        print(tick1.datetime, tick1.last_price)
+        # print(tick1.datetime, tick1.last_price, self.trading_target)
 
         # 多头检查
         if tick1.last_price > tick2.last_price > tick3.last_price:
@@ -192,7 +192,7 @@ class MonitorEngine:
 
         # 空头检查
         if tick1.last_price < tick2.last_price < tick3.last_price:
-            if self.trading_target > 1:
+            if self.trading_target > 0:
                 req = OrderRequest(
                     symbol=contract.symbol,
                     exchange=contract.exchange,
