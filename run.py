@@ -6,10 +6,12 @@ from vnpy.trader.event import (
     EVENT_CONTRACT, EVENT_POSITION,
     EVENT_TIMER
 )
-from vnpy.trader.constant import Exchange
+from vnpy.trader.constant import (
+    Exchange, Direction, OrderType, Offset
+)
 from vnpy.trader.object import (
     TickData, LogData, SubscribeRequest,
-    ContractData, PositionData
+    ContractData, PositionData, OrderRequest
 )
 from vnpy.trader.gateway import BaseGateway
 from vnpy_ctp import CtpGateway
@@ -84,18 +86,33 @@ class MonitorEngine:
         self.event_engine.register(EVENT_TICK, self.process_tick_event)
         self.event_engine.register(EVENT_CONTRACT, self.process_contract_event)
         self.event_engine.register(EVENT_POSITION, self.process_position_event)
-        self.event_engine.register(EVENT_TIMER, self.process_timer_event)
+        # self.event_engine.register(EVENT_TIMER, self.process_timer_event)
         self.event_engine.register(EVENT_LOG, self.process_log_event)
+
+        self.tick_history: list[TickData] = []
+        self.trading_symbol: str = "m2301.DCE"
+        self.trading_target: int = 0
 
     def process_tick_event(self, event: Event) -> None:
         """行情事件"""
         tick: TickData = event.data
         self.ticks[tick.vt_symbol] = tick
 
+        # 缓存交易合约的Tick历史
+        if tick.vt_symbol == self.trading_symbol:
+            self.tick_history.append(tick)
+
+            self.run_trading()
+
     def process_contract_event(self, event: Event) -> None:
         """合约事件"""
         contract: ContractData = event.data
         self.contracts[contract.vt_symbol] = contract
+
+        # 订阅策略合约行情
+        if contract.vt_symbol == self.trading_symbol:
+            req = SubscribeRequest(contract.symbol, contract.exchange)
+            self.gateway.subscribe(req)
 
     def process_position_event(self, event: Event) -> None:
         """持仓事件"""
@@ -140,6 +157,55 @@ class MonitorEngine:
 
             value = position.volume * tick.last_price * contract.size
             print(f"{position.vt_symbol} {position.direction}当前持仓市值{value}")
+
+    def run_trading(self) -> None:
+        """执行策略交易"""
+        # 检查至少要3个Tick
+        if len(self.tick_history) < 3:
+            return
+
+        # 提取行情和合约
+        tick1 = self.tick_history[-1]
+        tick2 = self.tick_history[-2]
+        tick3 = self.tick_history[-3]
+
+        contract = self.contracts[self.trading_symbol]
+
+        print(tick1.datetime, tick1.last_price)
+
+        # 多头检查
+        if tick1.last_price > tick2.last_price > tick3.last_price:
+            if not self.trading_target:
+                req = OrderRequest(
+                    symbol=contract.symbol,
+                    exchange=contract.exchange,
+                    direction=Direction.LONG,
+                    type=OrderType.LIMIT,
+                    price=tick1.last_price + 10,
+                    volume=1,
+                    offset=Offset.OPEN
+                )
+                self.gateway.send_order(req)
+
+                self.trading_target = 1
+                print(f"{self.trading_symbol}买入开仓1手", tick1.datetime)
+
+        # 空头检查
+        if tick1.last_price < tick2.last_price < tick3.last_price:
+            if self.trading_target > 1:
+                req = OrderRequest(
+                    symbol=contract.symbol,
+                    exchange=contract.exchange,
+                    direction=Direction.SHORT,
+                    type=OrderType.LIMIT,
+                    price=tick1.last_price - 10,
+                    volume=1,
+                    offset=Offset.CLOSE
+                )
+                self.gateway.send_order(req)
+
+                self.trading_target = 0
+                print(f"{self.trading_symbol}卖出平仓1手", tick1.datetime)
 
 
 def main():
