@@ -1,19 +1,19 @@
 from typing import TYPE_CHECKING
 
 from vnpy.trader.object import TickData
-from vnpy.trader.constant import Direction, Offset
+
+from template import StrategyTemplate
 
 if TYPE_CHECKING:       # 只在编辑代码时导入
     from engine import StrategyEngine
 
 
-class SimpleStrategy:
+class SimpleStrategy(StrategyTemplate):
     """简单策略"""
 
     def __init__(self, strategy_engine: "StrategyEngine", vt_symbol: str) -> None:
         """"""
-        self.strategy_engine: "StrategyEngine" = strategy_engine
-        self.trading_symbol: str = vt_symbol
+        super().__init__(strategy_engine, vt_symbol)
 
         self.tick_history: list[TickData] = []
         self.trading_target: int = 0
@@ -52,31 +52,3 @@ class SimpleStrategy:
             "trading_target": self.trading_target
         }
         self.put_event(data)
-
-    def buy(self, price: float, volume: int) -> None:
-        """买入开仓"""
-        self.strategy_engine.send_order(
-            self.trading_symbol,
-            price,
-            volume,
-            Direction.LONG,
-            Offset.OPEN
-        )
-
-    def sell(self, price: float, volume: int) -> None:
-        """卖出平仓"""
-        self.strategy_engine.send_order(
-            self.trading_symbol,
-            price,
-            volume,
-            Direction.SHORT,
-            Offset.CLOSE
-        )
-
-    def write_log(self, msg: str) -> None:
-        """输出日志"""
-        self.strategy_engine.write_log(msg)
-
-    def put_event(self, data: dict) -> None:
-        """推送事件"""
-        self.strategy_engine.put_event(data)
