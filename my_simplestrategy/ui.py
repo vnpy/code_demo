@@ -12,7 +12,7 @@ from vnpy.trader.object import (
 )
 from vnpy.trader.engine import MainEngine
 
-from base import EVENT_STRATEGY
+from .base import EVENT_STRATEGY
 
 
 class SimpleWidget(QtWidgets.QWidget):

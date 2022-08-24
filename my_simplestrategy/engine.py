@@ -13,20 +13,19 @@ from vnpy.trader.object import (
     ContractData, OrderRequest,
     OrderData, TradeData
 )
-from vnpy.trader.engine import MainEngine
+from vnpy.trader.engine import MainEngine, BaseEngine
 
-from base import EVENT_STRATEGY
-from template import StrategyTemplate
-from strategy import SimpleStrategy
+from .base import EVENT_STRATEGY
+from .template import StrategyTemplate
+from .strategy import SimpleStrategy
 
 
-class StrategyEngine:
+class StrategyEngine(BaseEngine):
     """策略引擎"""
 
     def __init__(self, main_engine: MainEngine, event_engine: EventEngine) -> None:
         """"""
-        self.main_engine: MainEngine = main_engine
-        self.event_engine: EventEngine = event_engine
+        super().__init__(main_engine, event_engine, "SimpleStrategy")
 
         self.strategies: dict[str, StrategyTemplate] = {}
         self.subscribed: set[str] = set()

@@ -4,7 +4,7 @@ from vnpy.trader.object import TickData, TradeData, OrderData
 from vnpy.trader.constant import Direction, Offset
 
 if TYPE_CHECKING:       # 只在编辑代码时导入
-    from engine import StrategyEngine
+    from .engine import StrategyEngine
 
 
 class StrategyTemplate:

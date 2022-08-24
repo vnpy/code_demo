@@ -2,10 +2,10 @@ from typing import TYPE_CHECKING
 
 from vnpy.trader.object import TickData
 
-from template import StrategyTemplate
+from .template import StrategyTemplate
 
 if TYPE_CHECKING:       # 只在编辑代码时导入
-    from engine import StrategyEngine
+    from .engine import StrategyEngine
 
 
 class SimpleStrategy(StrategyTemplate):
