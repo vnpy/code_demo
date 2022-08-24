@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from PySide6 import QtWidgets
 
 from vnpy.event import EventEngine, Event
@@ -89,9 +91,13 @@ class MonitorEngine:
         # self.event_engine.register(EVENT_TIMER, self.process_timer_event)
         self.event_engine.register(EVENT_LOG, self.process_log_event)
 
-        self.tick_history: list[TickData] = []
-        self.trading_symbol: str = "IF2209.CFFEX"
-        self.trading_target: int = 0
+        self.tick_history: dict[str, list[TickData]] = defaultdict(list)
+        self.trading_symbols: set[str] = set([
+            "IF2209.CFFEX",
+            "IH2209.CFFEX",
+            "IC2209.CFFEX",
+        ])
+        self.trading_targets: dict[str, int] = defaultdict(int)
 
     def process_tick_event(self, event: Event) -> None:
         """行情事件"""
@@ -99,10 +105,11 @@ class MonitorEngine:
         self.ticks[tick.vt_symbol] = tick
 
         # 缓存交易合约的Tick历史
-        if tick.vt_symbol == self.trading_symbol:
-            self.tick_history.append(tick)
+        if tick.vt_symbol in self.trading_symbols:
+            history: list[TickData] = self.tick_history[tick.vt_symbol]
+            history.append(tick)
 
-            self.run_trading()
+            self.run_trading(tick.vt_symbol)
 
     def process_contract_event(self, event: Event) -> None:
         """合约事件"""
@@ -110,7 +117,7 @@ class MonitorEngine:
         self.contracts[contract.vt_symbol] = contract
 
         # 订阅策略合约行情
-        if contract.vt_symbol == self.trading_symbol:
+        if contract.vt_symbol in self.trading_symbols:
             req = SubscribeRequest(contract.symbol, contract.exchange)
             self.gateway.subscribe(req)
 
@@ -158,24 +165,25 @@ class MonitorEngine:
             value = position.volume * tick.last_price * contract.size
             print(f"{position.vt_symbol} {position.direction}当前持仓市值{value}")
 
-    def run_trading(self) -> None:
+    def run_trading(self, vt_symbol: str) -> None:
         """执行策略交易"""
         # 检查至少要3个Tick
-        if len(self.tick_history) < 3:
+        history = self.tick_history[vt_symbol]
+        if len(history) < 3:
             return
 
         # 提取行情和合约
-        tick1 = self.tick_history[-1]
-        tick2 = self.tick_history[-2]
-        tick3 = self.tick_history[-3]
+        tick1 = history[-1]
+        tick2 = history[-2]
+        tick3 = history[-3]
 
-        contract = self.contracts[self.trading_symbol]
+        contract = self.contracts[vt_symbol]
 
         # print(tick1.datetime, tick1.last_price, self.trading_target)
 
         # 多头检查
         if tick1.last_price > tick2.last_price > tick3.last_price:
-            if not self.trading_target:
+            if not self.trading_targets[vt_symbol]:
                 req = OrderRequest(
                     symbol=contract.symbol,
                     exchange=contract.exchange,
@@ -187,12 +195,12 @@ class MonitorEngine:
                 )
                 self.gateway.send_order(req)
 
-                self.trading_target = 1
-                print(f"{self.trading_symbol}买入开仓1手", tick1.datetime)
+                self.trading_targets[vt_symbol] = 1
+                print(f"{vt_symbol}买入开仓1手", tick1.datetime)
 
         # 空头检查
         if tick1.last_price < tick2.last_price < tick3.last_price:
-            if self.trading_target > 0:
+            if self.trading_targets[vt_symbol] > 0:
                 req = OrderRequest(
                     symbol=contract.symbol,
                     exchange=contract.exchange,
@@ -204,8 +212,8 @@ class MonitorEngine:
                 )
                 self.gateway.send_order(req)
 
-                self.trading_target = 0
-                print(f"{self.trading_symbol}卖出平仓1手", tick1.datetime)
+                self.trading_targets[vt_symbol] = 0
+                print(f"{vt_symbol}卖出平仓1手", tick1.datetime)
 
 
 def main():
@@ -226,8 +234,8 @@ def main():
         "用户名": "000300",
         "密码": "vnpy1234",
         "经纪商代码": "9999",
-        "交易服务器": "180.168.146.187:10130",
-        "行情服务器": "180.168.146.187:10131",
+        "交易服务器": "180.168.146.187:10201",
+        "行情服务器": "180.168.146.187:10211",
         "产品名称": "simnow_client_test",
         "授权编码": "0000000000000000"
     }
