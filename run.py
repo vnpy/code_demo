@@ -1,7 +1,7 @@
 import json
 from collections import defaultdict
 
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtCore
 
 from vnpy.event import EventEngine, Event
 from vnpy.trader.event import (
@@ -27,13 +27,20 @@ EVENT_STRATEGY = "eMyStrategy"
 class SimpleWidget(QtWidgets.QWidget):
     """简单图形控件"""
 
+    signal_log = QtCore.Signal(Event)
+    signal_tick = QtCore.Signal(Event)
+
     def __init__(self, event_engine: EventEngine) -> None:
         """构造函数"""
         super().__init__()      # 这里要首先调用Qt对象C++中的构造函数
 
+        # 连接信号槽
+        self.signal_log.connect(self.process_log_event)
+        self.signal_tick.connect(self.process_tick_event)
+
         self.event_engine: EventEngine = event_engine
-        self.event_engine.register(EVENT_LOG, self.process_log_event)
-        self.event_engine.register(EVENT_TICK, self.process_tick_event)
+        self.event_engine.register(EVENT_LOG, self.signal_log.emit)
+        self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
 
         # 用于绑定API对象
         self.gateway: BaseGateway = None
@@ -243,14 +250,18 @@ class StrategyEngine:
 class StrategyMonitor(QtWidgets.QTableWidget):
     """策略监控表格"""
 
+    signal = QtCore.Signal(Event)
+
     def __init__(self, event_engine: EventEngine) -> None:
         """"""
         super().__init__()
 
+        self.signal.connect(self.process_strategy_event)
         self.event_engine: EventEngine = event_engine
-        self.event_engine.register(EVENT_STRATEGY, self.process_strategy_event)
+        self.event_engine.register(EVENT_STRATEGY, self.signal.emit)
 
         labels = ["代码", "最新价", "时间", "目标仓位"]
+        self.setColumnCount(len(labels))
         self.setHorizontalHeaderLabels(labels)      # 水平表头文字
         self.verticalHeader().setVisible(False)     # 垂直表头隐藏
         self.setEditTriggers(self.NoEditTriggers)   # 禁止内容编辑
@@ -260,6 +271,7 @@ class StrategyMonitor(QtWidgets.QTableWidget):
     def process_strategy_event(self, event: Event) -> None:
         """处理策略事件"""
         data: dict = event.data
+        print("strategy", data)
 
         # 如果是新收到的策略数据，则插入一行
         if data["vt_symbol"] not in self.rows:
