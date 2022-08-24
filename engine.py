@@ -3,17 +3,20 @@ import json
 from vnpy.event import EventEngine, Event
 from vnpy.trader.event import (
     EVENT_LOG, EVENT_TICK,
+    EVENT_ORDER, EVENT_TRADE
 )
 from vnpy.trader.constant import (
     Direction, OrderType, Offset
 )
 from vnpy.trader.object import (
     TickData, LogData, SubscribeRequest,
-    ContractData, OrderRequest
+    ContractData, OrderRequest,
+    OrderData, TradeData
 )
 from vnpy.trader.engine import MainEngine
 
 from base import EVENT_STRATEGY
+from template import StrategyTemplate
 from strategy import SimpleStrategy
 
 
@@ -25,10 +28,12 @@ class StrategyEngine:
         self.main_engine: MainEngine = main_engine
         self.event_engine: EventEngine = event_engine
 
-        self.strategies: dict[str, SimpleStrategy] = {}
+        self.strategies: dict[str, StrategyTemplate] = {}
         self.subscribed: set[str] = set()
 
         self.event_engine.register(EVENT_TICK, self.process_tick_event)
+        self.event_engine.register(EVENT_ORDER, self.process_order_event)
+        self.event_engine.register(EVENT_TRADE, self.process_trade_event)
 
         self.load_setting()
 
@@ -48,6 +53,24 @@ class StrategyEngine:
 
         if strategy:
             strategy.on_tick(tick)
+
+    def process_order_event(self, event: Event) -> None:
+        """委托事件"""
+        order: OrderData = event.data
+
+        strategy = self.strategies.get(order.vt_symbol, None)
+
+        if strategy:
+            strategy.on_order(order)
+
+    def process_trade_event(self, event: Event) -> None:
+        """成交事件"""
+        trade: TradeData = event.data
+
+        strategy = self.strategies.get(trade.vt_symbol, None)
+
+        if strategy:
+            strategy.on_trade(trade)
 
     def process_contract_event(self, event: Event) -> None:
         """合约事件"""
