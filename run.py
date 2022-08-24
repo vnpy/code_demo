@@ -40,7 +40,7 @@ class SimpleWidget(QtWidgets.QWidget):
 
         self.event_engine: EventEngine = event_engine
         self.event_engine.register(EVENT_LOG, self.signal_log.emit)
-        self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
+        # self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
 
         # 用于绑定API对象
         self.gateway: BaseGateway = None
@@ -215,7 +215,7 @@ class StrategyEngine:
                 self.gateway.send_order(req)
 
                 self.trading_targets[vt_symbol] = 1
-                print(f"{vt_symbol}买入开仓1手", tick1.datetime)
+                self.write_log(f"{vt_symbol}买入开仓1手 {tick1.datetime}")
 
         # 空头检查
         if tick1.last_price < tick2.last_price < tick3.last_price:
@@ -232,7 +232,7 @@ class StrategyEngine:
                 self.gateway.send_order(req)
 
                 self.trading_targets[vt_symbol] = 0
-                print(f"{vt_symbol}卖出平仓1手", tick1.datetime)
+                self.write_log(f"{vt_symbol}卖出平仓1手 {tick1.datetime}")
 
         # 推送事件
         event = Event(
@@ -244,6 +244,12 @@ class StrategyEngine:
                 "trading_target": self.trading_targets[vt_symbol]
             }
         )
+        self.event_engine.put(event)
+
+    def write_log(self, msg: str) -> None:
+        """输出日志"""
+        log = LogData(msg=msg, gateway_name="STRATEGY")
+        event = Event(EVENT_LOG, log)
         self.event_engine.put(event)
 
 
