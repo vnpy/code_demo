@@ -13,7 +13,7 @@ from vnpy.trader.object import (
     TickData, LogData, SubscribeRequest,
     ContractData, PositionData, OrderRequest
 )
-from vnpy.trader.gateway import BaseGateway
+from vnpy.trader.engine import MainEngine
 
 from base import EVENT_STRATEGY
 
@@ -21,10 +21,10 @@ from base import EVENT_STRATEGY
 class StrategyEngine:
     """策略引擎"""
 
-    def __init__(self, event_engine: EventEngine, gateway: BaseGateway) -> None:
+    def __init__(self, main_engine: MainEngine, event_engine: EventEngine) -> None:
         """"""
+        self.main_engine: MainEngine = main_engine
         self.event_engine: EventEngine = event_engine
-        self.gateway: BaseGateway = gateway
 
         self.ticks: dict[str, TickData] = {}
         self.contracts: dict[str, ContractData] = {}
@@ -34,7 +34,6 @@ class StrategyEngine:
         self.event_engine.register(EVENT_TICK, self.process_tick_event)
         self.event_engine.register(EVENT_CONTRACT, self.process_contract_event)
         self.event_engine.register(EVENT_POSITION, self.process_position_event)
-        # self.event_engine.register(EVENT_TIMER, self.process_timer_event)
         self.event_engine.register(EVENT_LOG, self.process_log_event)
 
         self.tick_history: dict[str, list[TickData]] = defaultdict(list)
@@ -45,7 +44,7 @@ class StrategyEngine:
 
     def load_setting(self) -> None:
         """加载交易代码配置"""
-        with open("setting.json") as f:
+        with open("c:\\Github\\code_demo\\setting.json") as f:
             vt_symbols = json.load(f)
             for s in vt_symbols:
                 self.trading_symbols.add(s)
@@ -70,7 +69,7 @@ class StrategyEngine:
         # 订阅策略合约行情
         if contract.vt_symbol in self.trading_symbols:
             req = SubscribeRequest(contract.symbol, contract.exchange)
-            self.gateway.subscribe(req)
+            self.main_engine.subscribe(req, contract.gateway_name)
 
     def process_position_event(self, event: Event) -> None:
         """持仓事件"""
@@ -90,7 +89,7 @@ class StrategyEngine:
         req: SubscribeRequest = SubscribeRequest(
             contract.symbol, contract.exchange
         )
-        self.gateway.subscribe(req)
+        self.main_engine.subscribe(req, contract.gateway_name)
 
         # 记录信息
         self.subscribed.add(position.vt_symbol)
@@ -144,7 +143,7 @@ class StrategyEngine:
                     volume=1,
                     offset=Offset.OPEN
                 )
-                self.gateway.send_order(req)
+                self.main_engine.send_order(req, contract.gateway_name)
 
                 self.trading_targets[vt_symbol] = 1
                 self.write_log(f"{vt_symbol}买入开仓1手 {tick1.datetime}")
@@ -161,7 +160,7 @@ class StrategyEngine:
                     volume=1,
                     offset=Offset.CLOSE
                 )
-                self.gateway.send_order(req)
+                self.main_engine.send_order(req, contract.gateway_name)
 
                 self.trading_targets[vt_symbol] = 0
                 self.write_log(f"{vt_symbol}卖出平仓1手 {tick1.datetime}")

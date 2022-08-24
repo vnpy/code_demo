@@ -10,7 +10,7 @@ from vnpy.trader.constant import (
 from vnpy.trader.object import (
     TickData, LogData, SubscribeRequest
 )
-from vnpy.trader.gateway import BaseGateway
+from vnpy.trader.engine import MainEngine
 
 from base import EVENT_STRATEGY
 
@@ -21,20 +21,19 @@ class SimpleWidget(QtWidgets.QWidget):
     signal_log = QtCore.Signal(Event)
     signal_tick = QtCore.Signal(Event)
 
-    def __init__(self, event_engine: EventEngine) -> None:
+    def __init__(self, main_engine: MainEngine, event_engine: EventEngine) -> None:
         """构造函数"""
         super().__init__()      # 这里要首先调用Qt对象C++中的构造函数
+
+        self.main_engine: MainEngine = main_engine
+        self.event_engine: EventEngine = event_engine
 
         # 连接信号槽
         self.signal_log.connect(self.process_log_event)
         self.signal_tick.connect(self.process_tick_event)
 
-        self.event_engine: EventEngine = event_engine
         self.event_engine.register(EVENT_LOG, self.signal_log.emit)
         # self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
-
-        # 用于绑定API对象
-        self.gateway: BaseGateway = None
 
         # 基础图形控件
         self.log_monitor: QtWidgets.QTextEdit = QtWidgets.QTextEdit()
@@ -101,7 +100,6 @@ class StrategyMonitor(QtWidgets.QTableWidget):
     def process_strategy_event(self, event: Event) -> None:
         """处理策略事件"""
         data: dict = event.data
-        print("strategy", data)
 
         # 如果是新收到的策略数据，则插入一行
         if data["vt_symbol"] not in self.rows:
