@@ -43,10 +43,19 @@ class MyServer(RpcServer):
         self.inited = False
         self.trading = False
 
+        self.register(self.write_log)
         self.register(self.send_msg)
         self.register(self.init_done)
         self.register(self.start_done)
         self.register(self.stop_done)
+
+    def write_log(self, msg: str) -> None:
+        """输出子进程日志"""
+        print(f"[交易子进程] {msg}")
+
+    def parent_log(self, msg: str) -> None:
+        """输出父进程日志"""
+        print(f"[监控父进程] {msg}")
 
     def send_msg(self, msg: str) -> bool:
         """发送消息"""
@@ -55,17 +64,17 @@ class MyServer(RpcServer):
     def init_done(self) -> None:
         """初始化完成"""
         self.inited = True
-        print("策略全部初始化完成")
+        self.write_log("策略全部初始化完成")
 
     def start_done(self) -> None:
         """启动完成"""
         self.trading = True
-        print("策略全部启动")
+        self.write_log("策略全部启动")
 
     def stop_done(self) -> None:
         """停止完成"""
         self.trading = False
-        print("策略全部停止")
+        self.write_log("策略全部停止")
 
     def clear_status(self) -> None:
         """清空状态"""
@@ -75,15 +84,19 @@ class MyServer(RpcServer):
 
 class MyClient(RpcClient):
 
-    def __init__(self, cta_engine: CtaEngine):
+    def __init__(self):
         """
         Constructor
         """
         super().__init__()
 
-        self.cta_engine: CtaEngine = cta_engine
+        self.cta_engine: CtaEngine = None
 
         self.active = True
+
+    def register_engine(self, cta_engine: CtaEngine) -> None:
+        """在后续传入CTA引擎"""
+        self.cta_engine = cta_engine
 
     def callback(self, topic: str, data: object):
         """回调函数"""
@@ -127,28 +140,36 @@ def check_trading_period() -> bool:
 
 def run_child():
     """子进程运行"""
-    ctp_setting = load_json("connect_ctp.json")
-
-    event_engine = EventEngine()
-    main_engine = MainEngine(event_engine)
-    main_engine.add_gateway(CtpGateway)
-    cta_engine = main_engine.add_app(CtaStrategyApp)
-    main_engine.write_log("主引擎创建成功")
-
-    log_engine = main_engine.get_engine("log")
-    event_engine.register(EVENT_CTA_LOG, log_engine.process_log_event)
-    main_engine.write_log("注册日志事件监听")
-
-    main_engine.connect(ctp_setting, "CTP")
-    main_engine.write_log("连接CTP接口")
-
-    cta_engine.init_engine()
-    main_engine.write_log("CTA引擎初始化完成")
-
-    my_client = MyClient(cta_engine)
+    # 创建客户端
+    my_client = MyClient()
     my_client.subscribe_topic("")
     my_client.start(req_address, sub_address)
 
+    # 创建核心引擎
+    event_engine = EventEngine()
+    main_engine = MainEngine(event_engine)
+    main_engine.add_gateway(CtpGateway)
+
+    cta_engine = main_engine.add_app(CtaStrategyApp)
+    my_client.register_engine(cta_engine)
+
+    my_client.write_log("核心引擎创建成功")    
+
+    # 注册CTA日志
+    log_engine = main_engine.get_engine("log")
+    event_engine.register(EVENT_CTA_LOG, log_engine.process_log_event)
+    my_client.write_log("注册日志事件监听")
+
+    # 连接CTP交易接口
+    ctp_setting = load_json("connect_ctp.json")
+    main_engine.connect(ctp_setting, "CTP")
+    my_client.write_log("连接CTP接口")
+
+    # 初始化CTA引擎
+    cta_engine.init_engine()
+    my_client.write_log("CTA引擎初始化完成")
+
+    # 主线程进入循环
     while my_client.active:
         sleep(10)
 
@@ -158,12 +179,12 @@ def run_child():
 
 def run_parent():
     """父进程运行"""
-    print("启动CTA策略守护父进程")
-
     child_process = None
 
     my_server = MyServer()
     my_server.start(rep_address, pub_address)
+
+    my_server.parent_log("启动CTA策略守护父进程")
 
     while True:
         trading = check_trading_period()
@@ -172,10 +193,10 @@ def run_parent():
         if trading:
             # 启动子进程
             if child_process is None:
-                print("启动子进程", "-" * 30)
+                my_server.parent_log("启动交易子进程")
                 child_process = multiprocessing.Process(target=run_child)
                 child_process.start()
-                print("子进程启动成功")
+                my_server.parent_log("子进程启动成功")
             # 启动交易策略
             elif child_process.is_alive():
                 if not my_server.inited:
@@ -195,7 +216,7 @@ def run_parent():
             else:
                 child_process = None
                 my_server.clear_status()
-                print("子进程关闭成功")
+                my_server.parent_log("子进程关闭成功")
 
         sleep(5)
 
