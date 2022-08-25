@@ -12,6 +12,8 @@ from vnpy_ctp import CtpGateway
 from vnpy_ctastrategy import CtaStrategyApp, CtaEngine
 from vnpy_ctastrategy.base import EVENT_CTA_LOG
 
+from ding import send_ding_msg
+
 
 # 通讯消息主题
 TOPIC_INIT = "init"
@@ -58,8 +60,8 @@ class MyServer(RpcServer):
         print(f"[监控父进程] {msg}")
 
     def send_msg(self, msg: str) -> bool:
-        """发送消息"""
-        print(msg)
+        """发送异常信息通知"""
+        send_ding_msg(f"[异常信息] {msg}")
 
     def init_done(self) -> None:
         """初始化完成"""
@@ -153,7 +155,7 @@ def run_child():
     cta_engine = main_engine.add_app(CtaStrategyApp)
     my_client.register_engine(cta_engine)
 
-    my_client.write_log("核心引擎创建成功")    
+    my_client.write_log("核心引擎创建成功")
 
     # 注册CTA日志
     log_engine = main_engine.get_engine("log")
@@ -205,7 +207,8 @@ def run_parent():
                     my_server.publish(TOPIC_START, None)
             # 异常信息报警
             else:
-                pass
+                code = child_process.exitcode
+                my_server.send_msg(f"子进程异常终止运行，退出码{code}")
 
         # 非交易时间则退出子进程
         if not trading and child_process:
