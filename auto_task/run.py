@@ -54,10 +54,12 @@ class MyServer(RpcServer):
     def write_log(self, msg: str) -> None:
         """输出子进程日志"""
         print(f"[交易子进程] {msg}")
+        send_ding_msg(f"[交易子进程] {msg}")        
 
     def parent_log(self, msg: str) -> None:
         """输出父进程日志"""
         print(f"[监控父进程] {msg}")
+        send_ding_msg(f"[监控父进程] {msg}")
 
     def send_msg(self, msg: str) -> bool:
         """发送异常信息通知"""
@@ -127,6 +129,7 @@ class MyClient(RpcClient):
 
 def check_trading_period() -> bool:
     """检查当前是否为交易时段"""
+    return True
     current_time = datetime.now().time()
 
     trading = False

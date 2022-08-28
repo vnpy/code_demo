@@ -1,0 +1,1 @@
+EVENT_CONTRACT_INITED = "eInited"
